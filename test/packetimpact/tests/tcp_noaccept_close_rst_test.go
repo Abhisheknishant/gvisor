@@ -33,7 +33,7 @@ func TestTcpNoAcceptCloseReset(t *testing.T) {
 	defer dut.TearDown()
 	listenFd, remotePort := dut.CreateListener(unix.SOCK_STREAM, unix.IPPROTO_TCP, 1)
 	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
-	conn.Handshake()
+	conn.Connect()
 	defer conn.Close()
 	dut.Close(listenFd)
 	if _, err := conn.Expect(tb.TCP{Flags: tb.Uint8(header.TCPFlagRst | header.TCPFlagAck)}, 1*time.Second); err != nil {

@@ -67,7 +67,7 @@ func TestTCPOutsideTheWindow(t *testing.T) {
 			defer dut.Close(listenFD)
 			conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
 			defer conn.Close()
-			conn.Handshake()
+			conn.Connect()
 			acceptFD, _ := dut.Accept(listenFD)
 			defer dut.Close(acceptFD)
 

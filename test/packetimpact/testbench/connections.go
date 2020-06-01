@@ -628,15 +628,32 @@ func NewTCPIPv4(t *testing.T, outgoingTCP, incomingTCP TCP) TCPIPv4 {
 	}
 }
 
-// Handshake performs a TCP 3-way handshake. The input Connection should have a
+// Connect performs a TCP 3-way handshake. The input Connection should have a
 // final TCP Layer.
-func (conn *TCPIPv4) Handshake() {
+func (conn *TCPIPv4) Connect() {
 	// Send the SYN.
 	conn.Send(TCP{Flags: Uint8(header.TCPFlagSyn)})
 
 	// Wait for the SYN-ACK.
 	synAck, err := conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
-	if synAck == nil {
+	if err != nil {
+		conn.t.Fatalf("didn't get synack during handshake: %s", err)
+	}
+	conn.layerStates[len(conn.layerStates)-1].(*tcpState).synAck = synAck
+
+	// Send an ACK.
+	conn.Send(TCP{Flags: Uint8(header.TCPFlagAck)})
+}
+
+// ConnectWithOptions performs a TCP 3-way handshake with given TCP options.
+// The input Connection should have a final TCP Layer.
+func (conn *TCPIPv4) ConnectWithOptions(options []byte) {
+	// Send the SYN.
+	conn.Send(TCP{Flags: Uint8(header.TCPFlagSyn), Options: options})
+
+	// Wait for the SYN-ACK.
+	synAck, err := conn.Expect(TCP{Flags: Uint8(header.TCPFlagSyn | header.TCPFlagAck)}, time.Second)
+	if err != nil {
 		conn.t.Fatalf("didn't get synack during handshake: %s", err)
 	}
 	conn.layerStates[len(conn.layerStates)-1].(*tcpState).synAck = synAck

@@ -38,7 +38,7 @@ func TestZeroWindowProbeUserTimeout(t *testing.T) {
 	conn := tb.NewTCPIPv4(t, tb.TCP{DstPort: &remotePort}, tb.TCP{SrcPort: &remotePort})
 	defer conn.Close()
 
-	conn.Handshake()
+	conn.Connect()
 	acceptFd, _ := dut.Accept(listenFd)
 	defer dut.Close(acceptFd)
 
