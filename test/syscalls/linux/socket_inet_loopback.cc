@@ -17,6 +17,7 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <string.h>
+#include <sys/resource.h>
 
 #include <atomic>
 #include <iostream>
@@ -552,6 +553,61 @@ TEST_P(SocketInetLoopbackTest, TCPListenShutdownWhileConnect) {
   TestListenWhileConnect(GetParam(), [](FileDescriptor& f) {
     ASSERT_THAT(shutdown(f.get(), SHUT_RD), SyscallSucceeds());
   });
+}
+
+// This test verifies that connect returns EADDRNOTAVAIL if all local ephemeral
+// ports are already in use for a given destination ip/port.
+// We disable S/R because this test creates a large number of sockets.
+TEST_P(SocketInetLoopbackTest, TestTCPPortExhaustion_NoRandomSave) {
+  auto const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  constexpr int kBacklog = 10;
+  constexpr int kClients = 65536;
+
+  // Create the listening socket.
+  auto listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), kBacklog), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  // Disable cooperative S/R as we are making too many syscalls.
+  DisableSave ds;
+
+  // Now we keep opening connections till we run out of local ephemeral ports.
+  // and assert the error we get back.
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  std::vector<FileDescriptor> clients;
+  std::vector<FileDescriptor> servers;
+
+  for (int i = 0; i < kClients; i++) {
+    FileDescriptor client = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+    int ret = connect(client.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                      connector.addr_len);
+    if (ret == 0) {
+      clients.push_back(std::move(client));
+      FileDescriptor server =
+          ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+      servers.push_back(std::move(server));
+      continue;
+    }
+    ASSERT_THAT(ret, SyscallFailsWithErrno(EADDRNOTAVAIL));
+    break;
+  }
 }
 
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
